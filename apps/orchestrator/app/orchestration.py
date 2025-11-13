@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from .models import OrchestratorRequest, OrchestratorResponse, MemorySnapshot
-from .session_context import Message
+from .session_context import Message, new_session_context
 from .memory_store import MemoryStore
 
 
@@ -16,17 +16,20 @@ class AgentCore:
         self.store = store
 
     async def handle(self, req: OrchestratorRequest) -> OrchestratorResponse:
-        # Resolve session
+        # Resolve session ID (can be passed in, or derived from user+channel)
         session_id = req.session_id or f"{req.user_id}:{req.channel}"
 
-        # Load/create session context
+        # Load existing or new session context
         ctx = await self.store.load_context(session_id, req.user_id, req.channel)
+
+        # Track whether we should reset everything AFTER this reply
+        reset_after_reply = False
 
         # Update timestamps
         now = datetime.now(timezone.utc)
         ctx.session.last_active_at = now
 
-        # Add user message
+        # Append user message to short-term memory
         user_msg = Message(role="user", text=req.text, timestamp=now)
         ctx.short_term.history.append(user_msg)
         ctx.short_term.turn_count += 1
@@ -56,7 +59,7 @@ class AgentCore:
             ctx.state.flags["awaiting_category"] = False
             ctx.state.flags["awaiting_items"] = True
             reply_text = (
-                f"Great, {req.text}! \n"
+                f"Great, {req.text}!\n"
                 "What items would you like to order? "
                 "Example: '1 large pepperoni, 1 garlic bread'."
             )
@@ -68,7 +71,7 @@ class AgentCore:
             ctx.state.flags["awaiting_items"] = False
             ctx.state.flags["awaiting_address"] = True
             reply_text = (
-                "Got it! \n"
+                "Got it!\n"
                 "Next, what's the delivery address?"
             )
 
@@ -120,16 +123,14 @@ class AgentCore:
                     f"- Items: {items}\n"
                     f"- Address: {address}\n"
                     f"- Phone: {phone}\n\n"
-                    "Thanks for ordering!"
+                    "Thanks for ordering! 🙌"
                 )
 
-                # Uncomment this block if you want to RESET the flow after success:
-                # ctx.state.flow = None
-                # ctx.state.step = None
-                # ctx.state.flags.clear()
-                # ctx.state.scratchpad.clear()
+                # Mark that we should reset the whole session AFTER this reply
+                reset_after_reply = True
 
             elif "no" in text_lower:
+                # Cancel the order and reset flow + scratchpad
                 ctx.state.flow = None
                 ctx.state.step = None
                 ctx.state.flags.clear()
@@ -146,20 +147,30 @@ class AgentCore:
         #  SIMPLE STATEFUL FOOD ORDERING FLOW (END)
         # ============================================================
 
-        # Fallback: greetings & echo
+        # Fallback: greetings & echo for anything outside the flow
         else:
             if any(g in text_lower for g in ["hello", "hi", "hey"]):
                 reply_text = f"Hello, {req.user_id}! (from MCP Orchestrator)"
             else:
                 reply_text = f"Echo from orchestrator: {req.text}"
 
-        # Append agent message
+        # Append agent message to short-term memory
         agent_msg = Message(role="agent", text=reply_text, timestamp=now)
         ctx.short_term.history.append(agent_msg)
 
-        # Save updated context
+        # Save updated context (so the client sees the latest state)
         await self.store.save_context(ctx)
 
+        # If requested, immediately reset the session, memory, and state
+        if reset_after_reply:
+            fresh_ctx = new_session_context(
+                session_id=session_id,
+                user_id=req.user_id,
+                channel=req.channel,
+            )
+            await self.store.save_context(fresh_ctx)
+
+        # Snapshot of memory (for the client)
         snapshot = MemorySnapshot(
             session_id=ctx.session.session_id,
             turn_count=ctx.short_term.turn_count,
