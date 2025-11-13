@@ -2,6 +2,8 @@
 from typing import Any, Dict, Optional
 from pydantic import BaseModel
 
+from .session_context import State  # 👈 import State from SessionContext
+
 
 class OrchestratorRequest(BaseModel):
     channel: str
@@ -20,4 +22,5 @@ class OrchestratorResponse(BaseModel):
     decision: str
     reply_text: str
     memory_snapshot: MemorySnapshot
+    state: State               # NEW: state summary in every response
     debug: Dict[str, Any]
