@@ -123,7 +123,7 @@ class AgentCore:
                     f"- Items: {items}\n"
                     f"- Address: {address}\n"
                     f"- Phone: {phone}\n\n"
-                    "Thanks for ordering! 🙌"
+                    "Thanks for ordering!"
                 )
 
                 # Mark that we should reset the whole session AFTER this reply
@@ -190,3 +190,4 @@ class AgentCore:
             state=ctx.state,
             debug=debug,
         )
+
