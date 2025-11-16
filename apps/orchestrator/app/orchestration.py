@@ -1,4 +1,10 @@
-#MCP Orch Support Flow Python
+#mcp_orchestrator-main/apps/orchestrator/app/orchestration.py
+
+
+# ============================================================
+#   MCP Orchestrator — Simple Stateful Food Ordering Flow
+#   MULTI-SESSION SAFE VERSION (Option A)
+# ============================================================
 
 from __future__ import annotations
 
@@ -10,22 +16,24 @@ from .memory_store import MemoryStore
 
 
 class AgentCore:
-    """Agent Core handling state + memory + flows."""
+    """Agent Core handling state + memory + the simple food flow."""
 
     def __init__(self, store: MemoryStore):
         self.store = store
 
     async def handle(self, req: OrchestratorRequest) -> OrchestratorResponse:
-        # Resolve session ID (can be passed in, or derived from user+channel)
+        # ============================================================
+        # MULTI-SESSION HANDLING (Option A: client-generated session)
+        # ============================================================
         session_id = req.session_id or f"{req.user_id}:{req.channel}"
 
-        # Load existing or new session context
+        # Load existing or create new session context
         ctx = await self.store.load_context(session_id, req.user_id, req.channel)
 
-        # Track whether we should reset everything AFTER this reply
+        # Track whether the session should reset after this reply
         reset_after_reply = False
 
-        # Update timestamps
+        # Timestamp update
         now = datetime.now(timezone.utc)
         ctx.session.last_active_at = now
 
@@ -40,28 +48,29 @@ class AgentCore:
         # ============================================================
         text_lower = req.text.lower().strip()
 
-        # 1) Start the food ordering flow
+        # 1) Start food order
         if ctx.state.flow is None and any(
             kw in text_lower for kw in ["order", "food", "pizza", "burger", "menu", "cravings"]
         ):
             ctx.state.flow = "food_order"
             ctx.state.step = "ask_category"
             ctx.state.flags["awaiting_category"] = True
+
             reply_text = (
                 "Nice, let's order some food!\n"
-                "What type of food would you like? (example. pizza, burger, salad, chicken, ramen)"
+                "What type of food would you like? (pizza, burger, ramen, salad, etc.)"
             )
 
-        # 2) Ask category (pizza, burger, etc.)
+        # 2) Ask category
         elif ctx.state.flow == "food_order" and ctx.state.step == "ask_category":
             ctx.state.scratchpad["category"] = req.text
             ctx.state.step = "collect_items"
             ctx.state.flags["awaiting_category"] = False
             ctx.state.flags["awaiting_items"] = True
+
             reply_text = (
                 f"Great, {req.text}!\n"
-                "What food items would you like to order? "
-                "Example: '1 large pepperoni, 1 garlic bread'."
+                "What items would you like to order? (e.g. '1 pepperoni pizza, 1 garlic bread')"
             )
 
         # 3) Collect food items
@@ -70,29 +79,26 @@ class AgentCore:
             ctx.state.step = "ask_address"
             ctx.state.flags["awaiting_items"] = False
             ctx.state.flags["awaiting_address"] = True
-            reply_text = (
-                "Got it!\n"
-                "Next, what's the delivery address?"
-            )
 
-        # 4) Ask for address
+            reply_text = "Got it! What's the delivery address?"
+
+        # 4) Collect address
         elif ctx.state.flow == "food_order" and ctx.state.step == "ask_address":
             ctx.state.scratchpad["address"] = req.text
             ctx.state.step = "ask_phone"
             ctx.state.flags["awaiting_address"] = False
             ctx.state.flags["awaiting_phone"] = True
-            reply_text = (
-                "Great — and what phone number should the driver call?"
-            )
 
-        # 5) Ask for phone number
+            reply_text = "Great — and what phone number should the driver call?"
+
+        # 5) Collect phone
         elif ctx.state.flow == "food_order" and ctx.state.step == "ask_phone":
             ctx.state.scratchpad["phone"] = req.text
             ctx.state.step = "confirm_order"
             ctx.state.flags["awaiting_phone"] = False
             ctx.state.flags["awaiting_confirmation"] = True
 
-            category = ctx.state.scratchpad.get("category", "food")
+            category = ctx.state.scratchpad.get("category", "")
             items = ctx.state.scratchpad.get("items", "")
             address = ctx.state.scratchpad.get("address", "")
             phone = ctx.state.scratchpad.get("phone", "")
@@ -103,10 +109,10 @@ class AgentCore:
                 f"- Items: {items}\n"
                 f"- Address: {address}\n"
                 f"- Phone: {phone}\n\n"
-                "Would you like to place this order? Please say Yes to confirm or No to cancel."
+                "Would you like to place this order? Yes or No?"
             )
 
-        # 6) Final confirmation
+        # 6) Confirm order
         elif ctx.state.flow == "food_order" and ctx.state.step == "confirm_order":
             if "yes" in text_lower:
                 ctx.state.step = "order_placed"
@@ -126,19 +132,18 @@ class AgentCore:
                     "Thanks for ordering!"
                 )
 
-                # Mark that we should reset the whole session AFTER this reply
+                # Reset the session AFTER this reply
                 reset_after_reply = True
 
             elif "no" in text_lower:
-                # Cancel the order and reset flow + scratchpad
                 ctx.state.flow = None
                 ctx.state.step = None
                 ctx.state.flags.clear()
                 ctx.state.scratchpad.clear()
 
                 reply_text = (
-                    "Okay, I've canceled the order. If you want to try again, "
-                    "just say you want to order food."
+                    "Okay, the order is canceled. "
+                    "If you'd like to order again, just say so!"
                 )
             else:
                 reply_text = "Please answer with 'yes' or 'no'."
@@ -147,37 +152,36 @@ class AgentCore:
         #  SIMPLE STATEFUL FOOD ORDERING FLOW (END)
         # ============================================================
 
-        # Fallback: greetings & echo for anything outside the flow
         else:
-            if any(g in text_lower for g in ["hello", "hi", "hey"]):
+            # Fallback smalltalk / echo
+            if any(greet in text_lower for greet in ["hello", "hi", "hey"]):
                 reply_text = f"Hello, {req.user_id}! (from MCP Orchestrator)"
             else:
                 reply_text = f"Echo from orchestrator: {req.text}"
 
-        # Append agent message to short-term memory
+        # Append agent message
         agent_msg = Message(role="agent", text=reply_text, timestamp=now)
         ctx.short_term.history.append(agent_msg)
 
-        # Save updated context (so the client sees the latest state)
+        # Save updated context state
         await self.store.save_context(ctx)
 
-        # If requested, immediately reset the session, memory, and state
+        # Reset after reply if flagged
         if reset_after_reply:
-            fresh_ctx = new_session_context(
+            fresh = new_session_context(
                 session_id=session_id,
                 user_id=req.user_id,
                 channel=req.channel,
             )
-            await self.store.save_context(fresh_ctx)
+            await self.store.save_context(fresh)
 
-        # Snapshot of memory (for the client)
+        # Build memory snapshot
         snapshot = MemorySnapshot(
-            session_id=ctx.session.session_id,
+            session_id=session_id,
             turn_count=ctx.short_term.turn_count,
         )
 
         debug = {
-            "version": ctx.meta.version,
             "channel": ctx.session.channel,
             "flow": ctx.state.flow,
             "step": ctx.state.step,
@@ -190,5 +194,3 @@ class AgentCore:
             state=ctx.state,
             debug=debug,
         )
-
-
