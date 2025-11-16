@@ -42,14 +42,14 @@ class AgentCore:
 
         # 1) Start the food ordering flow
         if ctx.state.flow is None and any(
-            kw in text_lower for kw in ["order", "food", "pizza", "burger", "menu"]
+            kw in text_lower for kw in ["order", "food", "pizza", "burger", "menu", "cravings"]
         ):
             ctx.state.flow = "food_order"
             ctx.state.step = "ask_category"
             ctx.state.flags["awaiting_category"] = True
             reply_text = (
                 "Nice, let's order some food!\n"
-                "What type of food would you like? (e.g., pizza, burger, sushi)"
+                "What type of food would you like? (example. pizza, burger, salad, chicken, ramen)"
             )
 
         # 2) Ask category (pizza, burger, etc.)
@@ -60,7 +60,7 @@ class AgentCore:
             ctx.state.flags["awaiting_items"] = True
             reply_text = (
                 f"Great, {req.text}!\n"
-                "What items would you like to order? "
+                "What food items would you like to order? "
                 "Example: '1 large pepperoni, 1 garlic bread'."
             )
 
@@ -103,7 +103,7 @@ class AgentCore:
                 f"- Items: {items}\n"
                 f"- Address: {address}\n"
                 f"- Phone: {phone}\n\n"
-                "Would you like to place this order? (yes/no)"
+                "Would you like to place this order? Please say Yes to confirm or No to cancel."
             )
 
         # 6) Final confirmation
@@ -190,4 +190,5 @@ class AgentCore:
             state=ctx.state,
             debug=debug,
         )
+
 
