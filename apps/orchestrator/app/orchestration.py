@@ -70,7 +70,7 @@ class AgentCore:
 
             reply_text = (
                 f"Great, {req.text}!\n"
-                "What items would you like to order? (e.g. '1 pepperoni pizza, 1 garlic bread')"
+                "What items would you like to order? (like '1 pepperoni pizza, 1 cheese burger', 1 caesar salad)"
             )
 
         # 3) Collect food items
@@ -194,3 +194,4 @@ class AgentCore:
             state=ctx.state,
             debug=debug,
         )
+
