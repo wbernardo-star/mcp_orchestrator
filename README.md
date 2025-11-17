@@ -1,16 +1,7 @@
 
 # MCP Monorepo – Listening Channel + MCP Orchestrator
 
-This is a **monorepo** containing two services (blocks) that match your
-architecture:
-
-- **Block 1 – Listening Channel**
-  - Receives external messages (e.g., from a web client)
-  - Normalizes them
-  - Forwards them to the Orchestrator
-  - Does **not** manage session/state/memory
-
-- **Block 2 – MCP Orchestrator**
+- **MCP Orchestrator**
   - Owns **session, state, and memory**
   - Uses a concrete `SessionContext` struct internally
   - Returns decisions + replies back to the Listening Channel
@@ -21,7 +12,7 @@ High-level data flow:
 ```text
 [User / External System]
         ↓
- Block 1: Listening Channel
+[Listening Channel /External Systen]
         ↓ (normalized event)
  Block 2: MCP Orchestrator (Session + State + Memory)
 ```
@@ -46,7 +37,7 @@ cp .env.example .env
 
 ---
 
-## 2. Run the MCP Orchestrator (Block 2)
+## 2. Run the MCP Orchestrator
 
 In one terminal:
 
@@ -65,28 +56,11 @@ curl http://localhost:7002/health
 
 ---
 
-## 3. Run the Listening Channel (Block 1)
-
-In another terminal:
-
-```bash
-source .venv/bin/activate
-make run-listening
-# or, manually:
-# uvicorn apps.listening_channel.app.main:app --reload --port 7001
-```
-
-Check health:
-
-```bash
-curl http://localhost:7001/health
-```
-
 ---
 
 ## 4. End-to-end test
 
-Call **Block 1**; it forwards to **Block 2**, which manages `SessionContext`
+Call **Listen Channel**; it forwards to **MCP Orchestrator**, which manages `SessionContext`
 for `user-123:web`:
 
 ```bash
@@ -123,13 +97,7 @@ Expected shape:
 
 ```text
 apps/
-  listening_channel/         # Block 1
-    app/
-      __init__.py
-      main.py                # FastAPI app (Listening Channel)
-      config.py              # Settings
-      models.py              # Pydantic schemas
-  orchestrator/              # Block 2
+  orchestrator/              # Main MCP Orchestrator
     app/
       __init__.py
       main.py                # FastAPI app (MCP Orchestrator)
@@ -139,7 +107,6 @@ apps/
       memory_store.py        # Simple in-memory store
       orchestration.py       # AgentCore using SessionContext
 tests/
-  test_listening_health.py
   test_orchestrator_health.py
 ```
 
@@ -156,3 +123,4 @@ pytest -q
 
 You can push this monorepo directly to GitHub and evolve both services
 together while keeping a clean separation by folder.
+
